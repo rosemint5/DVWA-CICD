@@ -126,7 +126,7 @@ jobs:
 
       - name: Wait for DVWA to be healthy
         run: |
-           echo "Waiting for DVWA to be ready..."
+          echo "Waiting for DVWA to be ready..."
           # Wait for both container health and direct access
           timeout 180s bash -c '
             until docker inspect dvwa | grep "healthy" >/dev/null && 
