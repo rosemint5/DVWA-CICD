@@ -78,21 +78,30 @@ jobs:
   gitleaks:
     name: Secrets Scan - Gitleaks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read  # Needed for code scanning
+      security-events: write  # Needed to upload results
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+        with:
+          fetch-depth: 0  # Required for full git history scanning
+
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v3
         with:
           scan-dir: .
           report-format: sarif
           report-path: gitleaks.sarif
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Upload Gitleaks report
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks.sarif
+          category: gitleaks
 
 
   dependency-check:
