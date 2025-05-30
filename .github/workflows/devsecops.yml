@@ -126,20 +126,31 @@ jobs:
 
       - name: Wait for DVWA to be healthy
         run: |
-          echo "Waiting for DVWA to be healthy..."
-          timeout 120s bash -c 'until curl -s http://localhost:4280/setup.php >/dev/null; do sleep 5; done'
+           echo "Waiting for DVWA to be ready..."
+          # Wait for both container health and direct access
+          timeout 180s bash -c '
+            until docker inspect dvwa | grep "healthy" >/dev/null && 
+                  curl -s http://localhost:4280/login.php | grep "Damn Vulnerable Web Application" >/dev/null; 
+            do 
+              echo "Still waiting..."; 
+              sleep 10; 
+            done'
+        
+          # Final verification
+          curl -v http://localhost:4280/login.php
+          docker logs dvwa
 
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.9.0
         with:
           target: "http://localhost:4280"
-          rules_file_name: ".zap/baseline.conf"  # Optional config
           cmd_options: "-I -J zap-report.json -w zap-report.md -r zap-report.html"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload reports
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: zap-reports
           path: |
