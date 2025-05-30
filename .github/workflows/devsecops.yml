@@ -123,16 +123,31 @@ jobs:
         uses: actions/checkout@v4
         
 
+      - name: Set up Docker CLI
+        run: |
+          # Wait for DinD to be ready
+          timeout 30s bash -c 'until docker --host tcp://localhost:2375 info >/dev/null 2>&1; do sleep 1; done'
+        
+          # Configure environment
+          echo "DOCKER_HOST=tcp://localhost:2375" >> $GITHUB_ENV
+          echo "DOCKER_TLS_VERIFY=" >> $GITHUB_ENV
+          echo "DOCKER_CERT_PATH=" >> $GITHUB_ENV
+
       - name: Start DVWA container
         run: |
-          docker --host tcp://localhost:2375 run -d \
+          docker run -d \
             --name dvwa \
             -p 4280:80 \
             --rm \
             vulnerables/web-dvwa
-          
+        
           echo "Waiting for DVWA to start..."
           timeout 60s bash -c 'until curl -s http://localhost:4280 >/dev/null; do sleep 3; done'
+
+      - name: Verify DVWA access
+        run: |
+          curl -v http://localhost:4280
+          docker ps -a
 
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.9.0
