@@ -109,27 +109,42 @@ jobs:
       contents: read
       packages: read
 
-    services:  # Uruchom DVWA jako kontener usługi (DinD)
-      dvwa:
-        image: vulnerables/web-dvwa
+    services:
+      dind:
+        image: docker:dind
         ports:
-          - "4280:80"  # Mapowanie portów (host:container)
-        options: --rm  # Automatyczne usuwanie po zakończeniu
+          - 2375:2375
+        env:
+          DOCKER_TLS_CERTDIR: ""
+        options: --privileged
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Wait for DVWA to start
+        
+      - name: Set up Docker CLI
         run: |
-          echo "Czekam na inicjalizację DVWA..."
-          timeout 30s bash -c 'while ! curl -s http://localhost:4280 >/dev/null; do sleep 2; done'
+          sudo apt-get update
+          sudo apt-get install -y docker.io
+          sudo usermod -aG docker $USER
+          docker --version
+
+      - name: Start DVWA container
+        run: |
+          docker --host tcp://localhost:2375 run -d \
+            --name dvwa \
+            -p 4280:80 \
+            --rm \
+            vulnerables/web-dvwa
+          
+          echo "Waiting for DVWA to start..."
+          timeout 60s bash -c 'until curl -s http://localhost:4280 >/dev/null; do sleep 3; done'
 
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.9.0
         with:
-          target: "http://dvwa:80"  # Adres wewnątrz sieci Docker (nie localhost!)
-          cmd_options: "-I"  # Ignoruj reguły o niskim ryzyku (opcjonalne)
+          target: "http://localhost:4280"
+          cmd_options: "-I -j"  # Ignore warnings, use JSON format
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
