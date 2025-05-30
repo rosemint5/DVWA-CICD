@@ -116,62 +116,35 @@ jobs:
           - 2375:2375
         env:
           DOCKER_TLS_CERTDIR: ""
-        options: --privileged
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-
-      - name: Set up Docker CLI
-        run: |
-          # Wait for DinD to be ready
-          timeout 30s bash -c 'until docker --host tcp://localhost:2375 info >/dev/null 2>&1; do sleep 1; done'
-        
-          # Configure environment
-          echo "DOCKER_HOST=tcp://localhost:2375" >> $GITHUB_ENV
-          echo "DOCKER_TLS_VERIFY=" >> $GITHUB_ENV
-          echo "DOCKER_CERT_PATH=" >> $GITHUB_ENV
 
       - name: Start DVWA container
         run: |
-          docker run -d \
+          docker --host tcp://localhost:2375 run -d \
             --name dvwa \
             -p 4280:80 \
-            --health-cmd "curl -f http://localhost || exit 1" \
-            --health-interval 5s \
-            --health-retries 10 \
             --rm \
-            vulnerables/web-dvwa
-        
-          # Wait for health status
-          echo "Waiting for DVWA to be healthy..."
-          timeout 120s bash -c 'until [ "$(docker inspect -f {{.State.Health.Status}} dvwa)" == "healthy" ]; do sleep 5; done'
-        
-          # Verify manually as fallback
-          curl --retry 10 --retry-delay 5 -v http://localhost:4280
+            ghcr.io/${{ github.repository_owner }}/dvwa:latest
+          
+          echo "Waiting for DVWA to start..."
+          timeout 60s bash -c 'until curl -s http://localhost:4280 >/dev/null; do sleep 3; done'
 
-      - name: Run ZAP Scan with explicit output
-        run: |
-          docker run --network host \
-            -v $(pwd):/zap/wrk/:rw \
-            -t owasp/zap2docker-stable \
-            zap-baseline.py \
-            -t http://localhost:4280 \
-            -J zap-report.json \
-            -w zap-report.md \
-            -r zap-report.html \
-            -I -j
-        
-          # Ensure files exist
-          ls -la zap-report.*
+      - name: Run ZAP Scan
+        uses: zaproxy/action-baseline@v0.9.0
+        with:
+          target: "http://localhost:4280"
+          cmd_options: "-I -j"  # Ignore warnings, use JSON format
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: zap-reports
+          name: zap-report
           path: |
-            zap-report.html
-            zap-report.json
-            zap-report.md
+            report_html.html
+            report_json.json
