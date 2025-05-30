@@ -102,7 +102,7 @@ jobs:
           out: 'reports'
 
   dast:
-    name: DAST - OWASP ZAP Scan (DinD)
+    name: DAST - OWASP ZAP Scan
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -110,41 +110,39 @@ jobs:
       packages: read
 
     services:
-      dind:
-        image: docker:dind
+      dvwa:
+        image: vulnerables/web-dvwa
         ports:
-          - 2375:2375
-        env:
-          DOCKER_TLS_CERTDIR: ""
+          - 4280:80
+        options: >-
+          --health-cmd="curl -f http://localhost:80/setup.php || exit 1"
+          --health-interval=30s
+          --health-timeout=10s
+          --health-retries=5
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Start DVWA container
+      - name: Wait for DVWA to be healthy
         run: |
-          docker --host tcp://localhost:2375 run -d \
-            --name dvwa \
-            -p 4280:80 \
-            --rm \
-            ghcr.io/${{ github.repository_owner }}/dvwa:latest
-          
-          echo "Waiting for DVWA to start..."
-          timeout 60s bash -c 'until curl -s http://localhost:4280 >/dev/null; do sleep 3; done'
+          echo "Waiting for DVWA to be healthy..."
+          timeout 120s bash -c 'until curl -s http://localhost:4280/setup.php >/dev/null; do sleep 5; done'
 
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.9.0
         with:
           target: "http://localhost:4280"
-          cmd_options: "-I -j"  # Ignore warnings, use JSON format
+          rules_file_name: ".zap/baseline.conf"  # Optional config
+          cmd_options: "-I -J zap-report.json -w zap-report.md -r zap-report.html"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload report
+      - name: Upload reports
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: zap-report
+          name: zap-reports
           path: |
-            report_html.html
-            report_json.json
+            zap-report.html
+            zap-report.json
+            zap-report.md
