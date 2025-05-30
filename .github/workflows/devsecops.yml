@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ "master" ]
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   build:
     name: Build DVWA Docker image
