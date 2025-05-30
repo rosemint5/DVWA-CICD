@@ -13,56 +13,63 @@ permissions:
 
 jobs:
   build:
-    name: Build DVWA Docker image
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+  name: Build and Push DVWA Docker Image
+  runs-on: ubuntu-latest
+  permissions:
+    contents: read
+    packages: write  # Required for pushing to GHCR
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4  # Updated from v3
 
-      - name: Build Docker image
-        run: docker build -t dvwa-app .
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build Docker image
+      run: |
+        docker build \
+          --tag ghcr.io/${{ github.repository_owner }}/dvwa:latest \
+          --tag ghcr.io/${{ github.repository_owner }}/dvwa:${{ github.sha }} \
+          .
+
+    - name: Push Docker image
+      run: |
+        docker push ghcr.io/${{ github.repository_owner }}/dvwa:latest
+        docker push ghcr.io/${{ github.repository_owner }}/dvwa:${{ github.sha }}
 
   semgrep_scan:
-    # User definable name of this GitHub Actions job.
     name: semgrep/ci
-    # If you are self-hosting, change the following `runs-on` value:
     runs-on: ubuntu-latest
     container:
-      # A Docker image with Semgrep installed. Do not change this.
       image: returntocorp/semgrep
-    # Skip any PR created by dependabot to avoid permission issues:
     if: (github.actor != 'dependabot[bot]')
     permissions:
-      # required for all workflows
       security-events: write
-      # only required for workflows in private repositories
       actions: read
       contents: read
 
     steps:
-      # Fetch project source with GitHub Actions Checkout.
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # Updated from v3
 
       - name: Perform Semgrep Analysis
-      # @NOTE: This is the actual semgrep command to scan your code.
-      # Modify the --config option to 'r/all' to scan using all rules,
-      # or use multiple flags to specify particular rules, such as
-      # --config r/all --config custom/rules
         run: semgrep scan -q --sarif --config auto ./vulnerable-source-code > semgrep-results.sarif
 
-      # upload the results for the CodeQL GitHub app to annotate the code
       - name: Save SARIF results as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # Fixed: Updated from v3 to v4
         with:
           name: semgrep-scan-results
           path: semgrep-results.sarif
 
-      # Upload SARIF file generated in previous step
-      - name: Upload SARIF result to the GitHub Security Dashboard
+      - name: Upload SARIF result
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: semgrep-results.sarif
