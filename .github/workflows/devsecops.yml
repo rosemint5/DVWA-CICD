@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v2
 
       - name: Build Docker image
         run: docker build -t dvwa-app .
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v2
+        uses: returntocorp/semgrep-action@v1
         with:
           config: p/default
 
@@ -46,8 +46,6 @@ jobs:
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
-        with:
-          args: "--verbose --redact"
 
   dependency-check:
     name: SCA - Dependency Check
