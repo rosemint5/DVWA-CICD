@@ -138,30 +138,40 @@ jobs:
           docker run -d \
             --name dvwa \
             -p 4280:80 \
+            --health-cmd "curl -f http://localhost || exit 1" \
+            --health-interval 5s \
+            --health-retries 10 \
             --rm \
             vulnerables/web-dvwa
         
-          echo "Waiting for DVWA to start..."
-          timeout 60s bash -c 'until curl -s http://localhost:4280 >/dev/null; do sleep 3; done'
+          # Wait for health status
+          echo "Waiting for DVWA to be healthy..."
+          timeout 120s bash -c 'until [ "$(docker inspect -f {{.State.Health.Status}} dvwa)" == "healthy" ]; do sleep 5; done'
+        
+          # Verify manually as fallback
+          curl --retry 10 --retry-delay 5 -v http://localhost:4280
 
-      - name: Verify DVWA access
+      - name: Run ZAP Scan with explicit output
         run: |
-          curl -v http://localhost:4280
-          docker ps -a
-
-      - name: Run ZAP Scan
-        uses: zaproxy/action-baseline@v0.9.0
-        with:
-          target: "http://localhost:4280"
-          cmd_options: "-I -j"  # Ignore warnings, use JSON format
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          docker run --network host \
+            -v $(pwd):/zap/wrk/:rw \
+            -t owasp/zap2docker-stable \
+            zap-baseline.py \
+            -t http://localhost:4280 \
+            -J zap-report.json \
+            -w zap-report.md \
+            -r zap-report.html \
+            -I -j
+        
+          # Ensure files exist
+          ls -la zap-report.*
 
       - name: Upload report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: zap-report
+          name: zap-reports
           path: |
-            report_html.html
-            report_json.json
+            zap-report.html
+            zap-report.json
+            zap-report.md
