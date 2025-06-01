@@ -158,31 +158,50 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Start DVWA with Compose
+      - name: Deploy DVWA with Compose
         run: |
           echo 'version: "3.8"
           services:
+            db:
+              image: mariadb
+              environment:
+                MYSQL_ROOT_PASSWORD: root
+                MYSQL_DATABASE: dvwa
+              healthcheck:
+                test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+
             dvwa:
-              container_name: dvwa
               image: vulnerables/web-dvwa
               ports:
                 - "3000:80"
               environment:
                 PHPIDS_ENABLED: "false"
                 DVWA_SECURITY: "low"
-              mem_limit: 512m
+              depends_on:
+                db:
+                  condition: service_healthy
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost/setup.php"]
+                interval: 10s
+                timeout: 5s
+                retries: 10
           ' > docker-compose.yml
 
-          docker-compose up -d
+          docker compose up -d
 
-          echo "Waiting for DVWA to be healthy..."
-          timeout 300 sh -c 'until curl -sSf http://dvwa/setup.php > /dev/null; do
-            echo "Waiting for DVWA to start..."
-            docker-compose logs --tail=10
-            sleep 10
+          DVWA_CONTAINER=$(docker compose ps -q dvwa)
+
+          echo "Waiting for DVWA container ($DVWA_CONTAINER) to be healthy..."
+          timeout 300 bash -c 'until [[ "$(docker inspect -f "{{.State.Health.Status}}" $DVWA_CONTAINER)" == "healthy" ]]; do
+            echo "Waiting for DVWA to be healthy..."
+            sleep 5
           done'
 
-          curl "http://dvwa/setup.php?create_db=1"
+          curl -v http://localhost:3000
+
 
       - name: Run OWASP ZAP Scan
         run: |
