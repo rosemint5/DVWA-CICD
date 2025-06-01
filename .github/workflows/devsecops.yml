@@ -201,6 +201,7 @@ jobs:
           done'
 
           curl -v http://localhost:3000
+          docker compose ps
 
 
       - name: Run OWASP ZAP Scan
