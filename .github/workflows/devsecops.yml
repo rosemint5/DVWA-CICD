@@ -151,7 +151,7 @@ jobs:
           DOCKER_TLS_CERTDIR: ""
 
     steps:
-      - name: Install tools (curl, bash, docker-compose)
+      - name: Install tools (curl, bash, docker-cli, docker-compose)
         run: |
           apk add --no-cache bash curl docker-cli docker-compose
 
@@ -163,6 +163,7 @@ jobs:
           echo 'version: "3.8"
           services:
             dvwa:
+              container_name: dvwa
               image: vulnerables/web-dvwa
               ports:
                 - "3000:80"
@@ -175,19 +176,21 @@ jobs:
           docker-compose up -d
 
           echo "Waiting for DVWA to be healthy..."
-          timeout 300 sh -c 'until curl -sSf http://localhost:3000/setup.php > /dev/null; do
+          timeout 300 sh -c 'until curl -sSf http://dvwa/setup.php > /dev/null; do
             echo "Waiting for DVWA to start..."
+            docker-compose logs --tail=10
             sleep 10
           done'
 
-          curl "http://localhost:3000/setup.php?create_db=1"
+          curl "http://dvwa/setup.php?create_db=1"
 
       - name: Run OWASP ZAP Scan
         run: |
           docker pull owasp/zap2docker-stable
 
-          docker run --network host owasp/zap2docker-stable zap-baseline.py \
-            -t http://localhost:3000 \
+          docker run --network "$(docker network ls --filter name=dvwa-cicd_default --format '{{.Name}}')" \
+            owasp/zap2docker-stable zap-baseline.py \
+            -t http://dvwa \
             -r zap_report.html \
             -m 5
 
@@ -199,5 +202,6 @@ jobs:
         with:
           name: zap-scan-report
           path: zap-reports/zap_report.html
+
 
 
