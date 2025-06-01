@@ -156,7 +156,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install tools
-        run: apk add --no-cache curl jq
+        run: |
+          apk add --no-cache curl busybox
+          ln -s /bin/sh /bin/bash  # Create bash symlink for compatibility
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -168,12 +170,24 @@ jobs:
       - name: Pull DVWA image
         run: docker pull ghcr.io/${{ github.repository_owner }}/dvwa:latest
 
-      - name: Start DVWA container with health check
+      - name: Start DVWA with MySQL
         run: |
-          # Start MySQL service first if needed
-          docker run -d --name dvwa-mysql -e MYSQL_ROOT_PASSWORD=p@ssw0rd -e MYSQL_DATABASE=dvwa mysql:5.7
+          # Start MySQL
+          docker run -d \
+            --name dvwa-mysql \
+            -e MYSQL_ROOT_PASSWORD=p@ssw0rd \
+            -e MYSQL_DATABASE=dvwa \
+            mysql:5.7
           
-          # Start DVWA with proper initialization
+          # Wait for MySQL to be ready
+          for i in {1..30}; do
+            if docker exec dvwa-mysql mysqladmin ping -h localhost -u root -pp@ssw0rd --silent; then
+              break
+            fi
+            sleep 2
+          done
+          
+          # Start DVWA
           docker run -d \
             --name dvwa \
             -p 4280:80 \
@@ -182,36 +196,36 @@ jobs:
             -e DB_USER=root \
             -e DB_PASSWORD=p@ssw0rd \
             -e DB_NAME=dvwa \
-            --health-cmd="curl -f http://localhost || exit 1" \
-            --health-interval=10s \
-            --health-retries=6 \
-            --health-start-period=30s \
             --rm \
             ghcr.io/${{ github.repository_owner }}/dvwa:latest
           
-          echo "Waiting for DVWA to be ready..."
-          # Wait for health check to pass
-          timeout 180 bash -c 'while [[ $(docker inspect -f "{{.State.Health.Status}}" dvwa) != "healthy" ]]; do sleep 10; echo "Waiting..."; done' || \
-            (echo "DVWA failed to become healthy"; docker logs dvwa; exit 1)
+          # Wait for DVWA to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:4280/setup.php | grep -q "Create / Reset Database"; then
+              echo "DVWA is ready"
+              break
+            fi
+            sleep 2
+          done
 
-      - name: Verify DVWA accessibility
+      - name: Initialize DVWA Database
         run: |
-          echo "Testing DVWA accessibility..."
-          curl -v http://localhost:4280/setup.php
-          curl -s http://localhost:4280 | grep "Damn Vulnerable Web Application" || \
-            (echo "DVWA not running properly"; docker logs dvwa; exit 1)
+          # Run the setup to initialize database
+          curl -s http://localhost:4280/setup.php --data-raw 'create_db=Create+%2F+Reset+Database' | grep -q "Database has been created"
+
+      - name: Verify DVWA
+        run: |
+          curl -s http://localhost:4280 | grep -q "Damn Vulnerable Web Application" || \
+            (echo "DVWA verification failed"; docker logs dvwa; exit 1)
 
       - name: Run OWASP ZAP Scan
-        if: success()
         uses: zaproxy/action-full-scan@v0.6.0
         with:
           target: 'http://localhost:4280'
           rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a'
           fail_action: true
-        env:
-          ZAP_AUTH_HEADER: "Authorization: Bearer ${{ secrets.ZAP_API_KEY }}"
-          
+
       - name: Cleanup
         if: always()
         run: |
