@@ -181,14 +181,17 @@ jobs:
 
       - name: Verify DVWA is running
         run: |
+          # Install curl in the DinD container
+          apk add --no-cache curl
+          
           docker ps
+          echo "Testing DVWA accessibility..."
           curl -s http://localhost:4280 | grep "Damn Vulnerable Web Application" || (echo "DVWA not running properly"; exit 1)
 
       - name: Run OWASP ZAP Scan
         uses: zaproxy/action-full-scan@v0.6.0
         with:
-          target: 'http://dvwa:4280'
-          docker_name: 'dvwa'
+          target: 'http://localhost:4280'
           rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a'
           fail_action: true
