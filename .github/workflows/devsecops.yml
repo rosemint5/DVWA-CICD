@@ -193,7 +193,7 @@ jobs:
           docker cp $(docker ps -alq):/zap/scan_report.html zap-reports/
           
       - name: Upload ZAP Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: zap-scan-report
           path: zap-reports/scan_report.html
