@@ -149,49 +149,66 @@ jobs:
       docker:
         image: docker:dind
         options: --privileged
-        ports:
-          - 2375:2375
     container:
-      image: ubuntu:latest
+      image: ubuntu:22.04  # More specific version
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Docker
+      - name: Install Docker and dependencies
         run: |
           apt-get update
-          apt-get install -y docker.io curl
+          apt-get install -y docker.io curl jq
 
       - name: Verify Docker
         run: |
           docker version
           docker info
 
-      - name: Deploy DVWA
+      - name: Deploy DVWA with healthcheck
         run: |
-          # Pull and run DVWA container
-          docker run -d --name dvwa -p 3000:80 --rm vulnerables/web-dvwa
-          
-          # Wait for DVWA to be ready
-          echo "Waiting for DVWA to start..."
-          while ! curl -s http://localhost:3000 >/dev/null; do
-            sleep 1
-          done
-          echo "DVWA is ready at http://localhost:3000"
+          # Start DVWA with explicit environment variables
+          docker run -d \
+            --name dvwa \
+            -p 3000:80 \
+            -e PHPIDS_ENABLED=false \
+            -e DVWA_SECURITY=low \
+            --health-cmd="curl -f http://localhost || exit 1" \
+            --health-interval=5s \
+            --health-retries=10 \
+            vulnerables/web-dvwa
+        
+          # Wait for container to be healthy
+          echo "Waiting for DVWA to initialize..."
+          timeout 180 bash -c 'while [[ $(docker inspect -f "{{.State.Health.Status}}" dvwa) != "healthy" ]]; do
+            sleep 5
+            echo "Still waiting for DVWA to be ready..."
+          done'
+        
+          # Additional verification
+          echo "DVWA container status:"
+          docker ps -a
+          docker logs dvwa --tail 50
+        
+          echo "Testing DVWA access..."
+          curl -v http://localhost:3000
 
-      - name: Run OWASP ZAP Scan (Basic)
+      - name: Run OWASP ZAP Scan
         run: |
-          # Pull OWASP ZAP Docker image
+          # Pull ZAP image
           docker pull owasp/zap2docker-stable
-          
-          # Run a quick passive scan
+        
+          # Run scan with increased timeout
           docker run --network host -i owasp/zap2docker-stable zap-baseline.py \
-            -t http://localhost:3000 -r scan_report.html
-          
-          # Store the report
+            -t http://localhost:3000 \
+            -r scan_report.html \
+            -m 5
+        
+          # Store report
           mkdir -p zap-reports
           docker cp $(docker ps -alq):/zap/scan_report.html zap-reports/
-          
+        
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         with:
