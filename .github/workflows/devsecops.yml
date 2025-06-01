@@ -193,15 +193,17 @@ jobs:
           docker compose up -d
 
           DVWA_CONTAINER=$(docker compose ps -q dvwa)
+          
 
           echo "Waiting for DVWA container ($DVWA_CONTAINER) to be healthy..."
           timeout 300 bash -c 'until [[ "$(docker inspect -f "{{.State.Health.Status}}" $DVWA_CONTAINER)" == "healthy" ]]; do
             echo "Waiting for DVWA to be healthy..."
+            docker compose ps
             sleep 5
           done'
 
           curl -v http://localhost:3000
-          docker compose ps
+          
 
 
       - name: Run OWASP ZAP Scan
