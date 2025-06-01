@@ -176,7 +176,7 @@ jobs:
             dvwa:
               image: vulnerables/web-dvwa
               ports:
-                - "3000:80"
+                - "4280:80"
               environment:
                 PHPIDS_ENABLED: "false"
                 DVWA_SECURITY: "low"
@@ -202,7 +202,7 @@ jobs:
             sleep 5
           done'
 
-          curl -v http://localhost:3000
+          curl -v http://localhost:4280
           
 
 
