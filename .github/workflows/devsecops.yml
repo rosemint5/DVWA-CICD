@@ -168,40 +168,38 @@ jobs:
       - name: Pull DVWA image
         run: docker pull ghcr.io/${{ github.repository_owner }}/dvwa:latest
 
-      - name: Start DVWA container with debug info
+      - name: Start DVWA container with health check
         run: |
+          # Start MySQL service first if needed
+          docker run -d --name dvwa-mysql -e MYSQL_ROOT_PASSWORD=p@ssw0rd -e MYSQL_DATABASE=dvwa mysql:5.7
+          
+          # Start DVWA with proper initialization
           docker run -d \
             --name dvwa \
             -p 4280:80 \
-            -e PHP_ENV=development \
+            --link dvwa-mysql:mysql \
+            -e DB_SERVER=mysql \
+            -e DB_USER=root \
+            -e DB_PASSWORD=p@ssw0rd \
+            -e DB_NAME=dvwa \
+            --health-cmd="curl -f http://localhost || exit 1" \
+            --health-interval=10s \
+            --health-retries=6 \
+            --health-start-period=30s \
             --rm \
             ghcr.io/${{ github.repository_owner }}/dvwa:latest
           
           echo "Waiting for DVWA to be ready..."
-          sleep 30
-          
-          # Debug container logs
-          echo "=== Container logs ==="
-          docker logs dvwa || true
-          
-          # Debug network info
-          echo "=== Network inspection ==="
-          docker inspect dvwa | jq '.[0].NetworkSettings'
+          # Wait for health check to pass
+          timeout 180 bash -c 'while [[ $(docker inspect -f "{{.State.Health.Status}}" dvwa) != "healthy" ]]; do sleep 10; echo "Waiting..."; done' || \
+            (echo "DVWA failed to become healthy"; docker logs dvwa; exit 1)
 
       - name: Verify DVWA accessibility
         run: |
           echo "Testing DVWA accessibility..."
-          MAX_RETRIES=5
-          for i in $(seq 1 $MAX_RETRIES); do
-            if curl -s http://localhost:4280 | grep "Damn Vulnerable Web Application"; then
-              echo "DVWA is running properly"
-              exit 0
-            fi
-            echo "Attempt $i/$MAX_RETRIES failed, retrying in 10 seconds..."
-            sleep 10
-          done
-          echo "DVWA not running properly after $MAX_RETRIES attempts"
-          exit 1
+          curl -v http://localhost:4280/setup.php
+          curl -s http://localhost:4280 | grep "Damn Vulnerable Web Application" || \
+            (echo "DVWA not running properly"; docker logs dvwa; exit 1)
 
       - name: Run OWASP ZAP Scan
         if: success()
@@ -211,6 +209,16 @@ jobs:
           rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a'
           fail_action: true
+        env:
+          ZAP_AUTH_HEADER: "Authorization: Bearer ${{ secrets.ZAP_API_KEY }}"
+          
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop dvwa || true
+          docker stop dvwa-mysql || true
+          docker rm dvwa || true
+          docker rm dvwa-mysql || true
 
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
