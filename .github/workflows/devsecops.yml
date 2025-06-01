@@ -157,8 +157,11 @@ jobs:
       - name: Install Docker Compose
         run: |
           apt-get update
-          apt-get install -y docker-compose-plugin
-
+          apt-get install -y curl
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          
       - name: Deploy DVWA with Compose
         run: |
           echo 'version: "3.8"
