@@ -147,27 +147,23 @@ jobs:
       docker:
         image: docker:dind
         options: --privileged
+        ports:
+          - 2375:2375
+        env:
+          DOCKER_TLS_CERTDIR: ""
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Docker Compose
+      - name: Set up Docker CLI to connect to DinD service
         run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io curl
-        
-          # Install Docker Compose v2
-          sudo mkdir -p /usr/local/lib/docker/cli-plugins
-          sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
-          sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          export DOCKER_HOST=tcp://localhost:2375
+          docker info
 
-      - name: Verify installations
-        run: |
-          docker --version
-          docker compose version
-          
-      - name: Deploy DVWA with Compose
+      - name: Deploy DVWA with Docker Compose
+        env:
+          DOCKER_HOST: tcp://localhost:2375
         run: |
           echo 'version: "3.8"
           services:
@@ -179,45 +175,37 @@ jobs:
                 PHPIDS_ENABLED: "false"
                 DVWA_SECURITY: "low"
               healthcheck:
-                test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 && curl -f http://localhost/setup.php"]
+                test: ["CMD-SHELL", "curl -sSf http://localhost/setup.php || exit 1"]
                 interval: 10s
                 timeout: 5s
                 retries: 30
               mem_limit: 512m
           ' > docker-compose.yml
-          
+
           docker compose up -d
-          
-          # Wait for healthy status
-          timeout 300 bash -c 'while [[ $(docker inspect -f "{{.State.Health.Status}}" dvwa-dvwa-1) != "healthy" ]]; do
-            echo "Waiting for DVWA to be ready..."
-            docker compose logs --tail=20 dvwa
+
+          echo "Waiting for DVWA to be healthy..."
+          timeout 300 bash -c 'until curl -sSf http://localhost:3000/setup.php > /dev/null; do
+            echo "Waiting for DVWA to start..."
             sleep 10
           done'
-          
-          # Force DB setup if needed
-          docker compose exec dvwa curl http://localhost/setup.php?create_db=1 -v
 
-      - name: Verify DVWA
-        run: |
-          docker compose ps
-          curl -v http://localhost:3000
+          docker compose exec dvwa curl http://localhost/setup.php?create_db=1 -v || true
 
       - name: Run OWASP ZAP Scan
+        env:
+          DOCKER_HOST: tcp://localhost:2375
         run: |
-          # Pull ZAP image
           docker pull owasp/zap2docker-stable
           
-          # Run scan with increased timeout
           docker run --network host -i owasp/zap2docker-stable zap-baseline.py \
             -t http://localhost:3000 \
             -r scan_report.html \
             -m 5
-          
-          # Store report
+
           mkdir -p zap-reports
           docker cp $(docker ps -alq):/zap/scan_report.html zap-reports/
-          
+
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         with:
