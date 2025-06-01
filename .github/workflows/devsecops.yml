@@ -146,50 +146,54 @@ jobs:
       packages: read
 
     services:
-      dvwa:
-        image: vulnerables/web-dvwa
+      docker:
+        image: docker:dind
+        options: --privileged
         ports:
-          - 4280:80
-        options: >-
-          --health-cmd="curl -f http://localhost:80/setup.php || exit 1"
-          --health-interval=30s
-          --health-timeout=10s
-          --health-retries=5
-
+          - 2375:2375
+    container:
+      image: ubuntu:latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Wait for DVWA to be healthy
+      - name: Install Docker
         run: |
-          echo "Waiting for DVWA to be ready..."
-          # Wait for both container health and direct access
-          timeout 180s bash -c '
-            until docker inspect dvwa | grep "healthy" >/dev/null && 
-                  curl -s http://localhost:4280/login.php | grep "Damn Vulnerable Web Application" >/dev/null; 
-            do 
-              echo "Still waiting..."; 
-              sleep 10; 
-            done'
-        
-          # Final verification
-          curl -v http://localhost:4280/login.php
-          docker logs dvwa
+          apt-get update
+          apt-get install -y docker.io curl
 
-      - name: Run ZAP Scan
-        uses: zaproxy/action-baseline@v0.9.0
-        with:
-          target: "http://localhost:4280"
-          cmd_options: "-I -J zap-report.json -w zap-report.md -r zap-report.html"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify Docker
+        run: |
+          docker version
+          docker info
 
-      - name: Upload reports
-        uses: actions/upload-artifact@v4
-        if: always()
+      - name: Deploy DVWA
+        run: |
+          # Pull and run DVWA container
+          docker run -d --name dvwa -p 3000:80 --rm vulnerables/web-dvwa
+          
+          # Wait for DVWA to be ready
+          echo "Waiting for DVWA to start..."
+          while ! curl -s http://localhost:3000 >/dev/null; do
+            sleep 1
+          done
+          echo "DVWA is ready at http://localhost:3000"
+
+      - name: Run OWASP ZAP Scan (Basic)
+        run: |
+          # Pull OWASP ZAP Docker image
+          docker pull owasp/zap2docker-stable
+          
+          # Run a quick passive scan
+          docker run --network host -i owasp/zap2docker-stable zap-baseline.py \
+            -t http://localhost:3000 -r scan_report.html
+          
+          # Store the report
+          mkdir -p zap-reports
+          docker cp $(docker ps -alq):/zap/scan_report.html zap-reports/
+          
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v3
         with:
-          name: zap-reports
-          path: |
-            zap-report.html
-            zap-report.json
-            zap-report.md
+          name: zap-scan-report
+          path: zap-reports/scan_report.html
