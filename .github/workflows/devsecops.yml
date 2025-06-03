@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline
+name: DVWA DevSecOps Pipeline
 
 on:
   push:
@@ -10,14 +10,12 @@ permissions:
   contents: read
   security-events: write
   actions: read
+  packages: write  # potrzebne do GHCR
 
 jobs:
   build:
     name: Build and Push DVWA Docker Image
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write  # Required for pushing to GHCR
 
     steps:
       - name: Checkout code
@@ -46,30 +44,25 @@ jobs:
           docker push ghcr.io/${{ github.repository_owner }}/dvwa:${{ github.sha }}
 
   semgrep_scan:
-    name: semgrep/ci
+    name: Static Code Analysis - Semgrep
     runs-on: ubuntu-latest
     container:
-      image: returntocorp/semgrep
-    if: (github.actor != 'dependabot[bot]')
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
+      image: returntocorp/semgrep:latest
+    if: github.actor != 'dependabot[bot]'
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Perform Semgrep Analysis
+      - name: Run Semgrep
         run: semgrep scan -q --sarif --config auto . > semgrep-results.sarif
 
-      - name: Save SARIF results as artifact
+      - name: Upload SARIF results
         uses: actions/upload-artifact@v4
         with:
-          name: semgrep-scan-results
+          name: semgrep-results
           path: semgrep-results.sarif
 
-      - name: Upload SARIF result
+      - name: Upload SARIF to GitHub
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep-results.sarif
@@ -78,167 +71,108 @@ jobs:
   gitleaks:
     name: Secrets Scan - Gitleaks
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v2
         with:
-          config-path: .gitleaks.toml
           format: sarif
           output: gitleaks.sarif
           no-git: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify report exists
+      - name: Verify gitleaks report
         run: |
           if [ -f "gitleaks.sarif" ]; then
-            echo "Report generated successfully"
+            echo "Gitleaks report exists"
             cat gitleaks.sarif | jq empty
           else
-            echo "No report generated - creating empty file"
-            echo '{"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json", "runs": []}' > gitleaks.sarif
+            echo "Creating empty gitleaks report"
+            echo '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[]}' > gitleaks.sarif
           fi
-          
-      - name: Upload Gitleaks report
+
+      - name: Upload gitleaks report
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
 
-  dependency-check:
-    name: SCA - Dependency Check
+  dependency_check:
+    name: SCA - OWASP Dependency Check
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Run OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'DVWA'
           format: 'ALL'
-          out: 'reports'
-          
+          out: 'dependency-check-report'
+
       - name: Upload Dependency Check report
         uses: actions/upload-artifact@v4
         with:
           name: dependency-check-report
-          path: reports/
+          path: dependency-check-report/
         if: always()
 
   dast:
-    name: DAST - OWASP ZAP Scan (DinD)
+    name: DAST - OWASP ZAP Scan
     runs-on: ubuntu-latest
-    needs: build
-    container:
-      image: docker:24.0.7-dind
-      options: --privileged
-      env:
-        DOCKER_TLS_CERTDIR: ""
     services:
       docker:
-        image: docker:24.0.7-dind
+        image: docker:dind
         options: --privileged
-        env:
-          DOCKER_TLS_CERTDIR: ""
+        ports:
+          - 2375:2375
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install tools
+      - name: Start DVWA container
         run: |
-          apk add --no-cache curl busybox
-          ln -s /bin/sh /bin/bash  # Create bash symlink for compatibility
+          docker pull vulnerables/web-dvwa:latest
+          docker run -d --name dvwa -p 3000:80 vulnerables/web-dvwa:latest
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull DVWA image
-        run: docker pull ghcr.io/${{ github.repository_owner }}/dvwa:latest
-
-      - name: Start DVWA with MySQL
+      - name: Wait for DVWA to be ready
         run: |
-          # Start MySQL
-          docker run -d \
-            --name dvwa-mysql \
-            -e MYSQL_ROOT_PASSWORD=p@ssw0rd \
-            -e MYSQL_DATABASE=dvwa \
-            mysql:5.7
-          
-          # Wait for MySQL to be ready
+          echo "Waiting for DVWA to be healthy..."
           for i in {1..30}; do
-            if docker exec dvwa-mysql mysqladmin ping -h localhost -u root -pp@ssw0rd --silent; then
-              break
+            if curl -s http://localhost:3000/login.php | grep -q "Damn Vulnerable Web Application"; then
+              echo "DVWA is up!"
+              exit 0
+            else
+              echo "Waiting 5 seconds..."
+              sleep 5
             fi
-            sleep 2
           done
-          
-          # Start DVWA
-          docker run -d \
-            --name dvwa \
-            -p 4280:80 \
-            --link dvwa-mysql:mysql \
-            -e DB_SERVER=mysql \
-            -e DB_USER=root \
-            -e DB_PASSWORD=p@ssw0rd \
-            -e DB_NAME=dvwa \
-            --rm \
-            ghcr.io/${{ github.repository_owner }}/dvwa:latest
-          
-          # Wait for DVWA to be ready
-          for i in {1..30}; do
-            if curl -s http://localhost:4280/setup.php | grep -q "Create / Reset Database"; then
-              echo "DVWA is ready"
-              break
-            fi
-            sleep 2
-          done
+          echo "DVWA did not start in time"
+          exit 1
 
-      - name: Initialize DVWA Database
-        run: |
-          # Run the setup to initialize database
-          curl -s http://localhost:4280/setup.php --data-raw 'create_db=Create+%2F+Reset+Database' | grep -q "Database has been created"
-
-      - name: Verify DVWA
-        run: |
-          curl -s http://localhost:4280 | grep -q "Damn Vulnerable Web Application" || \
-            (echo "DVWA verification failed"; docker logs dvwa; exit 1)
-
-      - name: Run OWASP ZAP Scan
-        uses: zaproxy/action-full-scan@v0.6.0
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.9.0
         with:
-          target: 'http://localhost:4280'
-          rules_file_name: '.zap/rules.tsv'
-          cmd_options: '-a'
-          fail_action: true
+          target: "http://localhost:3000"
+          cmd_options: "-I -J zap-report.json -w zap-report.md -r zap-report.html"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cleanup
-        if: always()
-        run: |
-          docker stop dvwa || true
-          docker stop dvwa-mysql || true
-          docker rm dvwa || true
-          docker rm dvwa-mysql || true
-
-      - name: Upload ZAP Report
+      - name: Upload ZAP reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-scan-report
-          path: zap-reports/zap_report.html
+          name: zap-reports
+          path: |
+            zap-report.json
+            zap-report.md
+            zap-report.html
 
-
-
+      - name: Stop and remove DVWA container
+        run: |
+          docker stop dvwa
+          docker rm dvwa
