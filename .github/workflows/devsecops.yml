@@ -80,7 +80,7 @@ jobs:
       - name: Run Gitleaks
         uses: zricethezav/gitleaks-action@v1.6.0
         with:
-          args: detect --redact --source=. --report-format=sarif --report-path=results.sarif --no-git
+          args: dir --redact --source=. --report-format=sarif --report-path=results.sarif --no-git
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
