@@ -73,28 +73,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          fetch-depth: 0  # pełna historia dla lepszego skanowania, ale nie jest konieczne
+        python-version: '3.x'
+
+      - name: Install TruffleHog
+        run: pip install trufflehog
 
       - name: Run TruffleHog scan
-        uses: trufflesecurity/trufflehog@main
-        with:
-          scan: filesystem       # skanuj katalog z checkoutem
-          path: '.'             # ścieżka do kodu źródłowego
-          output: 'trufflehog-results.json'  # zapisz raport do pliku
-          redact: false         # pokaż pełne sekretne wartości w raporcie
-          json: true            # wymuś format JSON (zalecane do analizy)
+        run: trufflehog filesystem --path . --json --no-redact > trufflehog-results.json
 
       - name: Upload scan results
         uses: actions/upload-artifact@v4
         with:
           name: trufflehog-results
           path: trufflehog-results.json
-
-      - name: Display scan results
-        run: cat trufflehog-results.json
 
   dependency_check:
     name: SCA - OWASP Dependency Check
