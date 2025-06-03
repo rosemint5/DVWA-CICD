@@ -109,24 +109,32 @@ jobs:
 
 
   snyk-sca:
+    name: SCA - Snyk Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@master
-      - uses: snyk/actions/setup@master
-      - uses: actions/setup-go@v1
+      - name: Checkout code
+        uses: actions/checkout@v3  # Changed from master to v3 for stability
+
+      - name: Setup Go
+        uses: actions/setup-go@v3  # Updated to v3
         with:
-          go-version: '1.13'
-      - name: Snyk monitor
-        run: snyk test
+          go-version: '1.20'  # Updated from 1.13 (very old)
+
+      - name: Setup Snyk
+        uses: snyk/actions/setup@master
+        with:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Run Snyk test and generate SARIF
+        run: snyk test --all-projects --sarif-file-output=snyk.sarif
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-
-    - name: Upload SARIF results
-      uses: github/codeql-action/upload-sarif@v3
-      if: success() || failure()
-      with:
-        sarif_file: snyk.sarif
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()  # Changed to always() from success()||failure()
+        with:
+          sarif_file: snyk.sarif
 
   dast:
     name: DAST - OWASP ZAP Scan
