@@ -68,21 +68,25 @@ jobs:
           sarif_file: semgrep-results.sarif
         if: always()
 
-  gitleaks:
-    name: Secrets Scan - Gitleaks
+  secrets_scan:
+    name: Secrets Scan - TruffleHog (Source Code Only)
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Run Gitleaks
-        uses: zricethezav/gitleaks-action@v1.6.0
+      - name: Run TruffleHog on source code
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/repo ghcr.io/trufflesecurity/trufflehog:latest \
+            filesystem /repo \
+            --json > trufflehog-results.json
+
+      - name: Upload TruffleHog Results
+        uses: actions/upload-artifact@v4
         with:
-          args: dir --redact --source=. --report-format=sarif --report-path=results.sarif --no-git
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: trufflehog-results
+          path: trufflehog-results.json
 
   dependency_check:
     name: SCA - OWASP Dependency Check
