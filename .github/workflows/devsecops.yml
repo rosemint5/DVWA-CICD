@@ -103,7 +103,7 @@ jobs:
         run: pip install trufflehog
 
       - name: Run TruffleHog scan
-        run: trufflehog file://$(pwd) --json > trufflehog-output.json || echo "Scan completed with findings"
+        run: trufflehog file://$(pwd) --json | tee trufflehog-output.json || echo "Scan completed with findings"
         continue-on-error: true
 
       - name: Upload scan results
