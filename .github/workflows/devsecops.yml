@@ -118,7 +118,7 @@ jobs:
     - name: Setup Snyk
       uses: snyk/actions/setup@master
       with:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        SNYK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Snyk SCA scan
       run: snyk test --all-projects --sarif-file-output=snyk-sca.sarif
