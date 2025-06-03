@@ -136,17 +136,8 @@ jobs:
           echo "DVWA did not start in time"
           exit 1
 
-      - name: Configure DVWA security level
-        run: |
-          curl -s -c cookies.txt -b cookies.txt "http://localhost:3000/login.php" \
-            --data "username=admin&password=password&Login=Login" \
-            --output /dev/null
-          
-          curl -s -c cookies.txt -b cookies.txt "http://localhost:3000/security.php" \
-            --data "security=low&seclev_submit=Submit" \
-            --output /dev/null
 
-      - name: Run OWASP ZAP Baseline Scan with authentication
+      - name: Run OWASP ZAP Baseline Scan
         id: zap-scan
         uses: zaproxy/action-baseline@v0.9.0
         with:
