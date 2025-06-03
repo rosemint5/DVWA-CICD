@@ -10,7 +10,7 @@ permissions:
   contents: read
   security-events: write
   actions: read
-  packages: write  # potrzebne do GHCR
+  packages: write
 
 jobs:
   build:
@@ -82,11 +82,6 @@ jobs:
         with:
           args: "--redact"
 
-      - name: Upload Gitleaks SARIF report
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: gitleaks.sarif
 
 
   dependency_check:
