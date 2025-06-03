@@ -146,17 +146,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: List files (debugging)
-        run: ls -la
 
       - name: Upload ZAP reports
         uses: actions/upload-artifact@v4
         with:
           name: zap-reports
           path: |
-            zap-report.json
-            zap-report.md
-            zap-report.html
+            report_json.json
+            report_md.md
+            report_html.html
 
       - name: Stop and remove DVWA container
         run: |
