@@ -94,11 +94,11 @@ jobs:
         fetch-depth: 0
     
     - name: scan-push
-        uses: trufflesecurity/trufflehog@main
-        with:
-          base: ""
-          head: ${{ github.ref_name }}
-          extra_args: --results=verified,unknown
+      uses: trufflesecurity/trufflehog@main
+      with:
+        base: ""
+        head: ${{ github.ref_name }}
+        extra_args: --results=verified,unknown
         
     - name: Archive results
       uses: actions/upload-artifact@v4
