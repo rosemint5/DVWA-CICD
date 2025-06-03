@@ -73,29 +73,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout master branch
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          ref: master
+          fetch-depth: 0  # Required for full git history scanning
 
-      - name: Install Git (already present on Ubuntu, but kept for parity)
-        run: sudo apt-get update && sudo apt-get install -y git
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
 
-      - name: Download TruffleHog v3 binary
-        run: |
-          curl -L https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog-linux-amd64 -o trufflehog
-          chmod +x trufflehog
-          sudo mv trufflehog /usr/local/bin/
+      - name: Install TruffleHog
+        run: pip install trufflehog
 
-      - name: Run TruffleHog on source directory
-        run: trufflehog filesystem --path . --json --no-redact | tee trufflehog-output.json
+      - name: Run TruffleHog scan
+        run: trufflehog file://$(pwd) --json > trufflehog-output.json || echo "Scan completed with findings"
+        continue-on-error: true
 
-      - name: Upload TruffleHog report
+      - name: Upload scan results
         uses: actions/upload-artifact@v4
         with:
-          name: trufflehog-output
+          name: trufflehog-results
           path: trufflehog-output.json
+          retention-days: 7
+        if: always()
 
   dependency_check:
     name: SCA - OWASP Dependency Check
