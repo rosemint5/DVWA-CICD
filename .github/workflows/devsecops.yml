@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    name: Build and Push DVWA Docker Image
+    name: Build, Trivy Scan and Push DVWA Docker Image
     runs-on: ubuntu-latest
 
     steps:
@@ -60,7 +60,7 @@ jobs:
           docker push ghcr.io/${{ github.repository_owner }}/dvwa:${{ github.sha }}
 
   semgrep_scan:
-    name: Static Code Analysis - Semgrep
+    name: SAST - Semgrep
     runs-on: ubuntu-latest
     container:
       image: returntocorp/semgrep:latest
@@ -85,7 +85,7 @@ jobs:
         if: always()
 
   secrets-scan:
-    name: TruffleHog Scan
+    name: Secrets - TruffleHog Scan
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -107,26 +107,26 @@ jobs:
         name: trufflehog-results
         path: trufflehog_report.json
 
-  dependency_check:
-    name: SCA - OWASP Dependency Check
+
+  snyk-sca:
+    name: SCA - Snyk Scan
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Run OWASP Dependency Check
-        uses: dependency-check/Dependency-Check_Action@main
-        with:
-          project: 'DVWA'
-          format: 'ALL'
-          out: 'dependency-check-report'
+    - name: Setup Snyk
+      uses: snyk/actions/setup@master
+      with:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      - name: Upload Dependency Check report
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-check-report
-          path: dependency-check-report/
-        if: always()
+    - name: Run Snyk SCA scan
+      run: snyk test --all-projects --sarif-file-output=snyk-sca.sarif
+
+    - name: Upload SARIF results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: snyk-sca.sarif
 
   dast:
     name: DAST - OWASP ZAP Scan
