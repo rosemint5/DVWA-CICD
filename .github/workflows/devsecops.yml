@@ -93,12 +93,12 @@ jobs:
       with:
         fetch-depth: 0
     
-    - name: Run TruffleHog (filesystem)
-      uses: trufflesecurity/trufflehog@main
-      with:
-        args: --no-verification --fail .
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: scan-push
+        uses: trufflesecurity/trufflehog@main
+        with:
+          base: ""
+          head: ${{ github.ref_name }}
+          extra_args: --results=verified,unknown
         
     - name: Archive results
       uses: actions/upload-artifact@v4
