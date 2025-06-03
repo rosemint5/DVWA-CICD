@@ -84,35 +84,28 @@ jobs:
           sarif_file: semgrep-results.sarif
         if: always()
 
-  secrets_scanning:
-    name: Secrets Scanning - TruffleHog
+  secrets-scan:
+    name: TruffleHog Scan
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Required for full git history scanning
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.8'
-
-      - name: Install TruffleHog
-        run: pip install trufflehog
-
-      - name: Run TruffleHog scan
-        run: trufflehog file://$(pwd) --json | tee trufflehog-output.json || echo "Scan completed with findings"
-        continue-on-error: true
-
-      - name: Upload scan results
-        uses: actions/upload-artifact@v4
-        with:
-          name: trufflehog-results
-          path: trufflehog-output.json
-          retention-days: 7
-        if: always()
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Run TruffleHog (filesystem)
+      uses: trufflesecurity/trufflehog@main
+      with:
+        args: --no-verification --fail .
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Archive results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: trufflehog-results
+        path: trufflehog_report.json
 
   dependency_check:
     name: SCA - OWASP Dependency Check
