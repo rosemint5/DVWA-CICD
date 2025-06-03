@@ -109,22 +109,40 @@ jobs:
 
 
   snyk-sca:
-    name: SCA - Snyk Scan
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@master
+      uses: actions/checkout@v3  # Use v3 instead of master for stability
 
-    - name: Run Snyk
+    - name: Setup PHP (required for snyk/actions/php)
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'  # Specify your PHP version
+
+    - name: Install dependencies (example for PHP)
+      run: composer install
+
+    - name: Run Snyk Scan
       uses: snyk/actions/php@master
-      continue-on-error: true # To make sure that SARIF upload gets called
+      continue-on-error: true
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       with:
-        args: --sarif-file-output=snyk.sarif
-        
-    - name: Upload result to GitHub Code Scanning
+        args: --sarif-file-output=snyk.sarif --file=composer.json  # Specify your manifest file
+
+    - name: Verify SARIF file exists
+      run: |
+        ls -la
+        if [ -f "snyk.sarif" ]; then
+          echo "SARIF file exists"
+        else
+          echo "SARIF file not found!"
+          exit 1
+        fi
+
+    - name: Upload SARIF results
       uses: github/codeql-action/upload-sarif@v3
+      if: success() || failure()  # Run even if previous steps failed
       with:
         sarif_file: snyk.sarif
 
