@@ -75,14 +75,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # pełna historia dla lepszego skanowania, ale nie jest konieczne
 
-      - name: Run TruffleHog on source code
+      - name: Run TruffleHog scan
         uses: trufflesecurity/trufflehog@v3
         with:
-          scan: filesystem
-          path: .
-          output: trufflehog-results.json
-          redact: false  # Pokaż pełny sekret
+          scan: filesystem       # skanuj katalog z checkoutem
+          path: '.'             # ścieżka do kodu źródłowego
+          output: 'trufflehog-results.json'  # zapisz raport do pliku
+          redact: false         # pokaż pełne sekretne wartości w raporcie
+          json: true            # wymuś format JSON (zalecane do analizy)
 
       - name: Upload scan results
         uses: actions/upload-artifact@v4
@@ -90,7 +93,7 @@ jobs:
           name: trufflehog-results
           path: trufflehog-results.json
 
-      - name: Print scan results to log
+      - name: Display scan results
         run: cat trufflehog-results.json
 
   dependency_check:
