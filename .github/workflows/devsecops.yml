@@ -68,27 +68,34 @@ jobs:
           sarif_file: semgrep-results.sarif
         if: always()
 
-  secrets_scan:
-    name: Secrets Scan - TruffleHog
+  secrets_scanning:
+    name: Secrets Scanning - TruffleHog
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Checkout master branch
+        uses: actions/checkout@v4
         with:
-          python-version: '3.x'
+          fetch-depth: 0
+          ref: master
 
-      - name: Install TruffleHog
-        run: pip install trufflehog
+      - name: Install Git (already present on Ubuntu, but kept for parity)
+        run: sudo apt-get update && sudo apt-get install -y git
 
-      - name: Run TruffleHog scan
-        run: trufflehog filesystem --path . --json --no-redact > trufflehog-results.json
+      - name: Download TruffleHog v3 binary
+        run: |
+          curl -L https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog-linux-amd64 -o trufflehog
+          chmod +x trufflehog
+          sudo mv trufflehog /usr/local/bin/
 
-      - name: Upload scan results
+      - name: Run TruffleHog on source directory
+        run: trufflehog filesystem --path . --json --no-redact | tee trufflehog-output.json
+
+      - name: Upload TruffleHog report
         uses: actions/upload-artifact@v4
         with:
-          name: trufflehog-results
-          path: trufflehog-results.json
+          name: trufflehog-output
+          path: trufflehog-output.json
 
   dependency_check:
     name: SCA - OWASP Dependency Check
@@ -144,7 +151,6 @@ jobs:
           echo "DVWA did not start in time"
           exit 1
 
-
       - name: Run OWASP ZAP Baseline Scan
         id: zap-scan
         uses: zaproxy/action-baseline@v0.9.0
@@ -153,7 +159,6 @@ jobs:
           cmd_options: "-I -J report_json.json -w report_md.md -r report_html.html"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 
       - name: Upload ZAP reports
         if: always()
@@ -164,7 +169,6 @@ jobs:
             report_json.json
             report_md.md
             report_html.html
-
 
       - name: Stop and remove DVWA container
         if: always()
