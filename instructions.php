@@ -1,5 +1,7 @@
 <?php
 
+header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-ancestors 'none';");
+header("X-Frame-Options: DENY");
 define( 'DVWA_WEB_PAGE_TO_ROOT', '' );
 require_once DVWA_WEB_PAGE_TO_ROOT . 'dvwa/includes/dvwaPage.inc.php';
 require_once DVWA_WEB_PAGE_TO_ROOT . 'dvwa/includes/Parsedown.php';
